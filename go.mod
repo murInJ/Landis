@@ -1,4 +1,4 @@
-module Landis
+module github.com/murInJ/Landis
 
 go 1.18
 

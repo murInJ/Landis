@@ -19,12 +19,18 @@ type LanDiscovery interface {
 }
 
 type Discovery struct {
-	port           int
-	broadcastIP    net.IP
-	publicIP       net.IP
+	innerPort      int
+	localIP        net.IP
 	discoveryMap   map[string]time.Time
-	isOnline       bool
 	controlChannel chan int
+	localAdress    string
+	debug          bool
+	broadcastIP    net.IP
+	outerPort      int
+}
+
+func (d *Discovery) SetDebug(val bool) {
+	d.debug = val
 }
 
 func (d *Discovery) push(address string, duration time.Duration) {
@@ -51,22 +57,15 @@ func (d *Discovery) List() []string {
 
 func (d *Discovery) boardcast() {
 	var err error
-	d.publicIP, err = GetIp_Public()
-	if err != nil {
-		d.isOnline = false
-		d.publicIP = net.ParseIP("127.0.0.1")
-	}
-
-	d.broadcastIP = GetIP_Broadcast()
 
 	laddr := net.UDPAddr{
-		IP:   d.publicIP,
-		Port: d.port,
+		IP:   d.localIP,
+		Port: d.outerPort,
 	}
 
 	raddr := net.UDPAddr{
 		IP:   d.broadcastIP,
-		Port: d.port,
+		Port: d.outerPort,
 	}
 
 	conn, err := net.DialUDP("udp", &laddr, &raddr)
@@ -76,22 +75,28 @@ func (d *Discovery) boardcast() {
 
 	defer conn.Close()
 
-	_, err = conn.Write([]byte(d.publicIP.String() + ":" + strconv.Itoa(d.port)))
+	_, err = conn.Write([]byte(d.localIP.String() + ":" + strconv.Itoa(d.outerPort)))
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if d.debug {
+		fmt.Printf("%s LAN broadcast %s\n",
+			color.New(color.FgHiCyan).Sprintf("Landis:"),
+			color.New(color.FgYellow).Sprintf(d.localIP.String()+":"+strconv.Itoa(d.outerPort)))
 	}
 }
 
 func (d *Discovery) recvBoardcast() {
 	laddr := net.UDPAddr{
-		IP:   net.IPv4(0, 0, 0, 0),
-		Port: d.port,
+		IP:   d.localIP,
+		Port: d.innerPort,
 	}
 	conn, err := net.ListenUDP("udp", &laddr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	buf := make([]byte, 1024)
+
 	for {
 		select {
 		case controlInfo := <-d.controlChannel:
@@ -100,11 +105,21 @@ func (d *Discovery) recvBoardcast() {
 				return
 			}
 		default:
+			buf := make([]byte, 1024)
 			n, err := conn.Read(buf)
+
 			if err != nil {
 				log.Fatal(err)
 			}
-			d.discoveryMap[string(buf[:n])] = time.Now().Add(time.Duration(time.Second * 10))
+			address := string(buf[:n])
+			if address != d.localAdress {
+				d.push(address, time.Second*10)
+				if d.debug {
+					fmt.Printf("%s recv broadcast %s\n",
+						color.New(color.FgHiCyan).Sprintf("Landis:"),
+						color.New(color.FgYellow).Sprintf(string(buf[:n])))
+				}
+			}
 		}
 	}
 }
@@ -137,8 +152,18 @@ func (d *Discovery) Close() {
 		color.New(color.FgHiCyan).Sprintf("Landis:"))
 }
 
-func NewLanDiscovery(port int) *Discovery {
+func NewLanDiscovery(outerPort, innerPort int) *Discovery {
+	localIP := GetIP_Local()
+	//localIP, _ := GetIp_Public()
+	//localIP := net.ParseIP("0.0.0.0")
 	return &Discovery{
-		port: port,
+		innerPort:      innerPort,
+		outerPort:      outerPort,
+		discoveryMap:   make(map[string]time.Time),
+		localAdress:    localIP.String() + ":" + strconv.Itoa(outerPort),
+		localIP:        localIP,
+		controlChannel: make(chan int),
+		debug:          false,
+		broadcastIP:    GetIP_Broadcast(),
 	}
 }
