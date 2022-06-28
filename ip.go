@@ -11,17 +11,13 @@ import (
 )
 
 func GetIP_Broadcast() net.IP {
-	mask := net.CIDRMask(20, 32)
+	mask := net.CIDRMask(24, 32)
 	s := strings.Split(GetIP_Local().String(), ".")
-	i1, _ := strconv.Atoi(s[0])
-	i2, _ := strconv.Atoi(s[1])
-	i3, _ := strconv.Atoi(s[2])
-	i4, _ := strconv.Atoi(s[3])
-	ip := net.IP([]byte{byte(i1), byte(i2), byte(i3), byte(i4)})
 
 	broadcast := net.IP(make([]byte, 4))
-	for i := range ip {
-		broadcast[i] = ip[i] | ^mask[i]
+	for i := 0; i < 4; i++ {
+		i1, _ := strconv.Atoi(s[i])
+		broadcast[i] = byte(i1) | ^mask[i]
 	}
 
 	return broadcast
